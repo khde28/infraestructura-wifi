@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Servidor Central IPS Hospitalario - Integrante 2</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-card: #1e293b;
+            --border-color: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-cyan: #06b6d4;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-red: #ef4444;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+        body { background: var(--bg-primary); color: var(--text-main); min-height: 100vh; padding: 20px; }
+
+        header {
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 25px;
+        }
+        .header-title h1 { font-size: 1.4rem; color: #fff; display: flex; align-items: center; gap: 10px; }
+        .header-title p { font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; }
+        .badge { padding: 4px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+        .badge-online { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
+        .badge-warn { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); border: 1px solid var(--accent-amber); }
+
+        .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .card-stat { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; }
+        .card-stat .title { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .card-stat .value { font-size: 1.8rem; font-weight: bold; margin: 8px 0; color: var(--accent-cyan); }
+        .card-stat .sub { font-size: 0.78rem; color: var(--text-muted); }
+
+        .main-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        @media (max-width: 1024px) { .main-layout { grid-template-columns: 1fr; } }
+
+        .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .card h2 { font-size: 1.1rem; color: #fff; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { text-align: left; padding: 10px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); font-weight: 600; }
+        td { padding: 10px; border-bottom: 1px solid #283548; }
+        tr:hover { background: rgba(255, 255, 255, 0.02); }
+
+        .event-item {
+            padding: 10px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.03);
+            border-left: 4px solid var(--accent-cyan); margin-bottom: 10px; font-size: 0.82rem;
+        }
+        .event-item.INGRESS { border-left-color: var(--accent-green); }
+        .event-item.EGRESS { border-left-color: var(--accent-red); }
+        .event-item.ROAMING { border-left-color: var(--accent-amber); }
+        .event-time { font-size: 0.72rem; color: var(--text-muted); float: right; }
+
+        .progress-bar-container { width: 100%; background: #0f172a; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+        .progress-bar { height: 100%; background: var(--accent-cyan); transition: width 0.3s ease; }
+
+        .tag-pill { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; background: #334155; }
+        .tag-accepted { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); }
+        .tag-pending { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); }
+        .tag-rejected { background: rgba(239, 68, 68, 0.2); color: var(--accent-red); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-title">
+            <h1><span>🏥</span> Sistema IPS Hospitalario — Servidor Central</h1>
+            <p>Integrante 2: API REST, WebSockets, Concurrencia (~100 dispositivos) e Infraestructura Wi-Fi</p>
+        </div>
+        <div>
+            <span id="ws-status" class="badge badge-online">● Servidor En Línea</span>
+        </div>
+    </header>
+
+    <!-- ESTADÍSTICAS EN VIVO -->
+    <div class="grid-stats">
+        <div class="card-stat">
+            <div class="title">Dispositivos Conectados</div>
+            <div class="value" id="stat-active">0 / 100</div>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="stat-progress" style="width: 0%;"></div>
+            </div>
+            <div class="sub" id="stat-util">Utilización: 0.0%</div>
+        </div>
+        <div class="card-stat">
+            <div class="title">Bienvenida Hospitalaria</div>
+            <div class="value" id="stat-welcome" style="color: var(--accent-green);">0 Aceptados</div>
+            <div class="sub" id="stat-welcome-sub">0 pendientes, 0 rechazados</div>
+        </div>
+        <div class="card-stat">
+            <div class="title">Routers / APs Monitoreados</div>
+            <div class="value" id="stat-aps" style="color: var(--accent-blue);">5 Activos</div>
+            <div class="sub">Infraestructura 802.11 Syslog/SNMP</div>
+        </div>
+        <div class="card-stat">
+            <div class="title">Rendimiento Telemetría</div>
+            <div class="value" id="stat-latency" style="color: var(--accent-amber);">0 ms</div>
+            <div class="sub" id="stat-throughput">0 lotes RSSI procesados</div>
+        </div>
+    </div>
+
+    <!-- CUERPO PRINCIPAL -->
+    <div class="main-layout">
+        <!-- COLUMNA IZQUIERDA: DISPOSITIVOS ACTIVOS Y DISTRIBUCIÓN -->
+        <div>
+            <div class="card">
+                <h2>
+                    <span>📱 Dispositivos y Pacientes Activos (~100 capacidad)</span>
+                    <span class="tag-pill" id="device-count-tag">0 dispositivos</span>
+                </h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Dispositivo / Paciente</th>
+                            <th>Piso Actual</th>
+                            <th>Área / Sala</th>
+                            <th>Confianza</th>
+                            <th>Bienvenida</th>
+                            <th>Última Actividad</th>
+                        </tr>
+                    </thead>
+                    <tbody id="devices-table-body">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 25px;">
+                                Esperando conexiones de dispositivos móviles...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <h2><span>📡 Infraestructura Wi-Fi (Routers y Puntos de Acceso)</span></h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>BSSID</th>
+                            <th>SSID de Red</th>
+                            <th>Piso</th>
+                            <th>Área Hospitalaria</th>
+                            <th>IP / Canal</th>
+                            <th>Rol</th>
+                        </tr>
+                    </thead>
+                    <tbody id="aps-table-body">
+                        <!-- Llenado dinámicamente -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- COLUMNA DERECHA: EVENTOS DE INGRESO Y SALIDA (INFRAESTRUCTURA) -->
+        <div>
+            <div class="card">
+                <h2><span>🚪 Eventos de Ingreso / Salida / Roaming</span></h2>
+                <div id="events-feed">
+                    <div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px;">
+                        Monitoreando eventos de red de los routers...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/dashboard`;
+        let socket;
+
+        function connectWS() {
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = () => {
+                document.getElementById('ws-status').className = 'badge badge-online';
+                document.getElementById('ws-status').textContent = '● WS Conectado';
+            };
+
+            socket.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    handleServerEvent(msg);
+                } catch(e) { console.error(e); }
+            };
+
+            socket.onclose = () => {
+                document.getElementById('ws-status').className = 'badge badge-warn';
+                document.getElementById('ws-status').textContent = '○ Reconectando...';
+                setTimeout(connectWS, 3000);
+            };
+        }
+
+        function handleServerEvent(msg) {
+            if (msg.event === 'init_state' || msg.event === 'refresh_data') {
+                updateDevicesTable(msg.data.active_devices);
+                fetchSummary();
+            } else if (msg.event === 'access_event') {
+                prependEventFeed(msg.data);
+                fetchSummary();
+            } else if (msg.event === 'device_location') {
+                fetchSummary();
+            }
+        }
+
+        async function fetchSummary() {
+            try {
+                const res = await fetch('/api/v1/dashboard/summary');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    const s = data.summary;
+                    document.getElementById('stat-active').textContent = `${s.active_devices} / ${s.capacity_max}`;
+                    document.getElementById('stat-progress').style.width = `${s.utilization_percent}%`;
+                    document.getElementById('stat-util').textContent = `Utilización: ${s.utilization_percent}%`;
+                    document.getElementById('stat-welcome').textContent = `${s.welcome_stats.accepted} Aceptados`;
+                    document.getElementById('stat-welcome-sub').textContent = `${s.welcome_stats.pending} pendientes, ${s.welcome_stats.opted_out} rechazados`;
+                    document.getElementById('stat-aps').textContent = `${s.total_infrastructure_aps} Activos`;
+                }
+
+                const resMet = await fetch('/api/v1/dashboard/metrics');
+                const met = await resMet.json();
+                if (met.status === 'success') {
+                    document.getElementById('stat-latency').textContent = `${met.processing_metrics.avg_processing_time_ms} ms`;
+                    document.getElementById('stat-throughput').textContent = `${met.processing_metrics.batches_processed} lotes RSSI (${met.processing_metrics.total_measurements} mediciones)`;
+                }
+
+                const resDevs = await fetch('/api/v1/dashboard/devices');
+                const devs = await resDevs.json();
+                if (devs.status === 'success') {
+                    updateDevicesTable(devs.devices);
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function fetchAPs() {
+            try {
+                const res = await fetch('/api/v1/infrastructure/aps');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    const tbody = document.getElementById('aps-table-body');
+                    tbody.innerHTML = '';
+                    data.access_points.forEach(ap => {
+                        const tr = document.createElement('tr');
+                        const isIngress = ap.is_ingress_ap ? '<span class="tag-pill tag-accepted">AP Ingreso Principal</span>' : '<span class="tag-pill">AP Cobertura</span>';
+                        tr.innerHTML = `
+                            <td><strong style="color: var(--accent-cyan); font-family: monospace;">${ap.bssid}</strong></td>
+                            <td>${ap.ssid}</td>
+                            <td>${ap.piso}</td>
+                            <td>${ap.area}</td>
+                            <td>${ap.ip_address || 'DHCP'} (Ch ${ap.channel || 'Auto'})</td>
+                            <td>${isIngress}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function fetchEvents() {
+            try {
+                const res = await fetch('/api/v1/dashboard/events?limit=15');
+                const data = await res.json();
+                if (data.status === 'success') {
+                    const container = document.getElementById('events-feed');
+                    container.innerHTML = '';
+                    data.events.forEach(ev => prependEventFeed(ev));
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        function updateDevicesTable(devices) {
+            const tbody = document.getElementById('devices-table-body');
+            document.getElementById('device-count-tag').textContent = `${devices.length} dispositivos`;
+            if (!devices || devices.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 25px;">No hay dispositivos móviles conectados</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = '';
+            devices.forEach(d => {
+                const tr = document.createElement('tr');
+                const loc = d.last_location || { piso: 'Detectando...', area: 'Calculando...', confidence: 0 };
+                let welcomeBadge = '<span class="tag-pill tag-pending">Pendiente</span>';
+                if (d.welcome_accepted === true) welcomeBadge = '<span class="tag-pill tag-accepted">Aceptado</span>';
+                if (d.welcome_accepted === false) welcomeBadge = '<span class="tag-pill tag-rejected">Rechazado</span>';
+
+                const timeShort = d.last_seen_at ? d.last_seen_at.split('T')[1].substring(0, 8) : '--:--:--';
+                tr.innerHTML = `
+                    <td>
+                        <strong>${d.patient_name || d.device_id}</strong><br>
+                        <span style="font-size: 0.72rem; color: var(--text-muted);">${d.device_model}</span>
+                    </td>
+                    <td><strong style="color: var(--accent-cyan);">${loc.piso}</strong></td>
+                    <td>${loc.area}</td>
+                    <td>${Math.round(loc.confidence * 100)}%</td>
+                    <td>${welcomeBadge}</td>
+                    <td>${timeShort}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function prependEventFeed(ev) {
+            const container = document.getElementById('events-feed');
+            const item = document.createElement('div');
+            item.className = `event-item ${ev.event_type}`;
+            const timeStr = ev.timestamp ? ev.timestamp.split('T')[1].substring(0, 8) : '';
+            
+            let icon = '🚪';
+            if (ev.event_type === 'INGRESS') icon = '🟢 INGRESO:';
+            if (ev.event_type === 'EGRESS') icon = '🔴 SALIDA:';
+            if (ev.event_type === 'ROAMING') icon = '🟡 ROAMING:';
+
+            item.innerHTML = `
+                <span class="event-time">${timeStr}</span>
+                <strong>${icon} Dispositivo ${ev.device_id.substring(0, 14)}</strong>
+                <div style="color: var(--text-muted); margin-top: 3px;">
+                    Ubicación: ${ev.area} (${ev.piso}) — AP: ${ev.ap_bssid}
+                </div>
+            `;
+            if (container.firstChild) {
+                container.insertBefore(item, container.firstChild);
+            } else {
+                container.appendChild(item);
+            }
+        }
+
+        // Inicializar
+        connectWS();
+        fetchAPs();
+        fetchEvents();
+        fetchSummary();
+        setInterval(fetchSummary, 5000);
+    </script>
+</body>
+</html>
+
